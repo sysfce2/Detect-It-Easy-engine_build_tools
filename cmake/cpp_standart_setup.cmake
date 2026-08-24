@@ -58,12 +58,13 @@ if(MSVC)
     # will apply to C too.
 endif()
 
+# Where this project's runtime data (qss, lang, db, ...) is installed. The rule
+# lives in one place because XOptions::convertPathName() decides it, not us -
+# see x_data_destination.cmake. It used to be keyed off PROJECT_NAME and
+# CMAKE_INSTALL_LIBDIR, both of which point somewhere the running application
+# never looks ("XOpcodeCalc" vs "xocalc"; "lib/x86_64-linux-gnu" vs "lib").
+include("${CMAKE_CURRENT_LIST_DIR}/x_data_destination.cmake")
+
 if(NOT DEFINED X_RESOURCES)
-    if(WIN32)
-        set(X_RESOURCES ".")
-    elseif(APPLE)
-        set(X_RESOURCES "${PROJECT_NAME}.app/Contents/Resources")
-    else()
-        set(X_RESOURCES ${CMAKE_INSTALL_LIBDIR}/${PROJECT_NAME})
-    endif()
+    x_data_install_destination(X_RESOURCES)
 endif()

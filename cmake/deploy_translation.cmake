@@ -1,6 +1,50 @@
+# XOptions::convertPathName() decides where runtime data has to live; see
+# x_data_destination.cmake for the full search order and why it is not a free
+# choice. INSTALL_DESTINATION below names the LEAF directory ("lang", "qss",
+# "db"); the platform-correct root in front of it is computed, not passed in.
+include("${CMAKE_CURRENT_LIST_DIR}/x_data_destination.cmake")
+
+# Resolve a caller-supplied leaf into a full install destination.
+#   DATA_ROOT <dir>  - override the computed root (escape hatch)
+function(_deploy_resolve_data_destination OUT_VAR LEAF)
+    # Backward compatibility: INSTALL_DESTINATION used to be passed through
+    # verbatim, and at least one project (xmachoviewer_source/src/CMakeLists.txt)
+    # sets X_RESOURCES itself and hands us the COMPLETE path "${X_RESOURCES}/lang".
+    # Prepending a computed root to that would double it - e.g.
+    # /usr/lib/xmachoviewer/lib/x86_64-linux-gnu/xmachoviewer/lang. A leaf is a
+    # single directory name ("lang", "qss", "db"), so anything containing a
+    # separator is a caller-supplied full path and is used as-is. CMake writes
+    # install destinations with forward slashes, so testing for "/" is enough.
+    if("${LEAF}" MATCHES "/")
+        message(STATUS "deploy: INSTALL_DESTINATION \"${LEAF}\" is a full path, using it verbatim")
+        set(${OUT_VAR} "${LEAF}" PARENT_SCOPE)
+        return()
+    endif()
+
+    if(DEFINED DEPLOY_DATA_ROOT AND NOT "${DEPLOY_DATA_ROOT}" STREQUAL "")
+        set(_deploy_root "${DEPLOY_DATA_ROOT}")
+    elseif(DEFINED X_RESOURCES AND NOT "${X_RESOURCES}" STREQUAL "")
+        # X_RESOURCES *is* this project's data root - cpp_standart_setup.cmake sets
+        # it from x_data_install_destination(). Honouring it lets a project that
+        # deliberately overrides the root (e.g. a portable layout that puts data next
+        # to the executable on every platform) still pass the plain leaf "lang"
+        # instead of hand-building a full path, which is how the one project that
+        # did hand-build it ended up on the multiarch libdir.
+        set(_deploy_root "${X_RESOURCES}")
+    else()
+        x_data_install_destination(_deploy_root)
+    endif()
+
+    if("${_deploy_root}" STREQUAL "." OR "${_deploy_root}" STREQUAL "")
+        set(${OUT_VAR} "${LEAF}" PARENT_SCOPE)
+    else()
+        set(${OUT_VAR} "${_deploy_root}/${LEAF}" PARENT_SCOPE)
+    endif()
+endfunction()
+
 function(deploy_install_directory)
     set(options)
-    set(oneValueArgs SOURCE_DIR INSTALL_DESTINATION WINDOWS_APPDATA_SUBDIR)
+    set(oneValueArgs SOURCE_DIR INSTALL_DESTINATION WINDOWS_APPDATA_SUBDIR DATA_ROOT)
     set(multiValueArgs)
     cmake_parse_arguments(DEPLOY "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
@@ -19,12 +63,15 @@ function(deploy_install_directory)
         return()
     endif()
 
-    install(DIRECTORY "${DEPLOY_SOURCE_DIR}/" DESTINATION "${DEPLOY_INSTALL_DESTINATION}")
+    _deploy_resolve_data_destination(_deploy_full_destination "${DEPLOY_INSTALL_DESTINATION}")
+    message(STATUS "deploy_install_directory: ${DEPLOY_INSTALL_DESTINATION} -> ${_deploy_full_destination}")
+
+    install(DIRECTORY "${DEPLOY_SOURCE_DIR}/" DESTINATION "${_deploy_full_destination}")
 
     if(WIN32 AND DEPLOY_WINDOWS_APPDATA_SUBDIR)
         set(_deploy_install_code "string(FIND \"\${CMAKE_INSTALL_PREFIX}\" \"_CPack_Packages\" _deploy_cpack_index)\n")
         string(APPEND _deploy_install_code "if(_deploy_cpack_index EQUAL -1)\n")
-        string(APPEND _deploy_install_code "    set(_deploy_source_dir \"\${CMAKE_INSTALL_PREFIX}/${DEPLOY_INSTALL_DESTINATION}\")\n")
+        string(APPEND _deploy_install_code "    set(_deploy_source_dir \"\${CMAKE_INSTALL_PREFIX}/${_deploy_full_destination}\")\n")
         string(APPEND _deploy_install_code "    if(EXISTS \"\${_deploy_source_dir}\")\n")
         string(APPEND _deploy_install_code "        if(NOT \"\$ENV{APPDATA}\" STREQUAL \"\")\n")
         string(APPEND _deploy_install_code "            file(TO_CMAKE_PATH \"\$ENV{APPDATA}\" _deploy_appdata_dir)\n")
@@ -145,7 +192,7 @@ endfunction()
 
 function(deploy_add_translations)
     set(options ADD_TO_ALL)
-    set(oneValueArgs TARGET_NAME INSTALL_DESTINATION OUTPUT_DIR WINDOWS_APPDATA_SUBDIR SOURCE_DIR LUPDATE_EXECUTABLE)
+    set(oneValueArgs TARGET_NAME INSTALL_DESTINATION OUTPUT_DIR WINDOWS_APPDATA_SUBDIR SOURCE_DIR LUPDATE_EXECUTABLE DATA_ROOT)
     set(multiValueArgs TS_FILES LRELEASE_HINTS SOURCE_DIRS LUPDATE_HINTS LUPDATE_OPTIONS)
     cmake_parse_arguments(DEPLOY "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
@@ -220,12 +267,15 @@ function(deploy_add_translations)
             add_custom_target(${DEPLOY_TARGET_NAME} DEPENDS ${_deploy_qm_files})
         endif()
 
-        install(FILES ${_deploy_qm_files} DESTINATION ${DEPLOY_INSTALL_DESTINATION})
+        _deploy_resolve_data_destination(_deploy_full_destination "${DEPLOY_INSTALL_DESTINATION}")
+        message(STATUS "deploy_add_translations: ${DEPLOY_INSTALL_DESTINATION} -> ${_deploy_full_destination}")
+
+        install(FILES ${_deploy_qm_files} DESTINATION "${_deploy_full_destination}")
 
         if(WIN32 AND DEPLOY_WINDOWS_APPDATA_SUBDIR)
             set(_deploy_install_code "string(FIND \"\${CMAKE_INSTALL_PREFIX}\" \"_CPack_Packages\" _deploy_cpack_index)\n")
             string(APPEND _deploy_install_code "if(_deploy_cpack_index EQUAL -1)\n")
-            string(APPEND _deploy_install_code "    set(_deploy_source_dir \"\${CMAKE_INSTALL_PREFIX}/${DEPLOY_INSTALL_DESTINATION}\")\n")
+            string(APPEND _deploy_install_code "    set(_deploy_source_dir \"\${CMAKE_INSTALL_PREFIX}/${_deploy_full_destination}\")\n")
             string(APPEND _deploy_install_code "    if(EXISTS \"\${_deploy_source_dir}\")\n")
             string(APPEND _deploy_install_code "        if(NOT \"\$ENV{APPDATA}\" STREQUAL \"\")\n")
             string(APPEND _deploy_install_code "            file(TO_CMAKE_PATH \"\$ENV{APPDATA}\" _deploy_appdata_dir)\n")
