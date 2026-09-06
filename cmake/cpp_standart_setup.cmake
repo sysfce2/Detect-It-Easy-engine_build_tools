@@ -8,9 +8,14 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-# Respect existing C++ standard; default to 14 if not set
+# Respect existing C++ standard; default to 11 if not set.
+# 11 is the tree's target: the shared sources are kept free of C++14/17-only
+# constructs so the same code builds with old toolchains. Note MSVC cannot
+# enforce this -- it has no /std:c++11 and silently compiles as C++14 -- so a
+# green MSVC build is not proof; check non-Qt translation units with
+# `g++ -std=c++11 -fsyntax-only` when in doubt.
 if(NOT DEFINED CMAKE_CXX_STANDARD)
-    set(CMAKE_CXX_STANDARD 14)
+    set(CMAKE_CXX_STANDARD 11)
 endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
